@@ -7,6 +7,7 @@
 
 #include "rpcMiner.h"
 #include <string.h>
+#include <openssl/sha.h>
 
 #define MAX_DESAFIOS 400
 
@@ -25,7 +26,7 @@ int *
 gettransactionid_100_svc(void *argp, struct svc_req *rqstp)
 {
 	static int  result;
-	printf("tamanholista = %d\n", tamanhoLista);
+	// printf("tamanholista = %d\n", tamanhoLista);
 	if (tamanhoLista == 0){
 		elements e;
 		e.transactionID = 0;
@@ -99,11 +100,75 @@ int *
 submitchallenge_100_svc(challengeTuple *argp, struct svc_req *rqstp)
 {
 	static int  result;
+	challengeTuple ct = *argp;
+	if (tamanhoLista == 0){ //nao existe desafio na lista
+		elements e;
+		e.transactionID = 0;
+		e.clientID = -1;
+		e.challenge = 1;
+		listaDesafios[tamanhoLista] = e;
+		tamanhoLista++;
+		result = -1;
+		return &result;
+	}
+	if (ct.transactionId >= tamanhoLista){
+		result = -1;
+		return &result;
+	}
+	elements e = listaDesafios[ct.transactionId];
+	if (e.clientID != -1) { //ja foi solucionado
+		result = 2;
+		return &result;
+	}
+	int challenge = e.challenge;
+	// gerar a hash da semente
+	char data[40];
+	strcpy(data, ct.seed);
+	size_t length = strlen(data);
 
-	/*
-	 * insert server code here
-	 */
+	unsigned char hash[SHA_DIGEST_LENGTH];
+	SHA1(data, length, hash);
+	for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
+		printf("%02x", hash[i]);
+	printf("\n");
 
+	//checar se a hash eh valida
+	int valid = 1;
+	int teste = 0;
+	// printf("%02x\n", teste);
+	// printf("%02x\n", (~0) << 4);
+	for (int i = 0, qtd = 1; i < SHA_DIGEST_LENGTH && challenge > 0; i+=4,++qtd){ //de 4 em 4 bytes
+		int left_shift = (32 - challenge < 0) ? 0 : 32 - challenge;
+		printf("left shift = %d\n", left_shift);
+		printf("shiftado = %02x\n", ((~0) << left_shift));
+		int hash_int = 0;
+		for (int j = 0; j < 4; ++j){
+			hash_int = (hash_int | hash[i + j]);
+			if (j < 3)
+				hash_int <<= 8;
+			printf("%02x\n", hash_int);
+		}
+		// hash_int = (hash_int | hash[i+1])
+		valid = valid && ((((~0) << left_shift) & hash_int) == 0);
+		challenge -= 32;
+		if (!valid){
+			result = 0;
+			return &result;
+		}
+	}
+	//ATUALIZAR VENCEDOR
+	listaDesafios[ct.transactionId].clientID = ct.clientID;
+	strcpy(listaDesafios[ct.transactionId].seed, ct.seed);
+
+	//gera novo desafio
+	
+	e.transactionID = tamanhoLista+1;
+	e.clientID = -1;
+	e.challenge = (tamanhoLista % 128) + 1;
+	listaDesafios[tamanhoLista] = e;
+	tamanhoLista++;
+
+	result = 1;
 	return &result;
 }
 
@@ -146,12 +211,12 @@ getseed_100_svc(int *argp, struct svc_req *rqstp)
 		tamanhoLista++;
 	}
 	if (transactionID >= tamanhoLista){
-		result = -1;
+		result.challenge = -1;
 		return &result;
 	}
 	result.status = listaDesafios[transactionID].clientID == -1 ? 1: 0;
-	result.desafio = listaDesafios[transactionID].challenge;
-	
+	result.challenge = listaDesafios[transactionID].challenge;
+	strcpy(result.seed, listaDesafios[transactionID].seed);
 
 	return &result;
 }

@@ -21,7 +21,8 @@ OBJECTS_SVC = $(SOURCES_SVC.c:%.c=%.o) $(TARGETS_SVC.c:%.c=%.o)
 # Compiler flags 
 
 CFLAGS += -g 
-LDLIBS += -lnsl
+LDLIBS += -lnsl -lcrypto
+#SERVERLIBS += -lcypto
 RPCGENFLAGS = 
 
 # Targets 
@@ -39,7 +40,7 @@ $(CLIENT) : $(OBJECTS_CLNT)
 	$(LINK.c) -o $(CLIENT) $(OBJECTS_CLNT) $(LDLIBS) 
 
 $(SERVER) : $(OBJECTS_SVC) 
-	$(LINK.c) -o $(SERVER) $(OBJECTS_SVC) $(LDLIBS)
+	$(LINK.c) -o $(SERVER) $(OBJECTS_SVC) $(LDLIBS) $(SERVERLIBS)
 
  clean:
 	 $(RM) core $(TARGETS) $(OBJECTS_CLNT) $(OBJECTS_SVC) $(CLIENT) $(SERVER)

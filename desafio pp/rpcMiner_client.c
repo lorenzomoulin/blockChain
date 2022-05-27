@@ -5,7 +5,7 @@
  */
 
 #include "rpcMiner.h"
-
+#include <openssl/sha.h>
 #define MENUGETTRANSACTIONID 1
 #define MENUGETCHALLENGE 2
 #define MENUGETTRANSACTIONSTATUS 3
@@ -48,6 +48,33 @@ int getChallenge(CLIENT *clnt, int transactionID){
 
 int getTransactionStatus(CLIENT *clnt, int transactionID){
 	int *result = gettransactionstatus_100(&transactionID, clnt);
+	if (result == NULL){
+		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
+		exit(0);
+	}
+	return *(result);
+}
+
+int submitChallenge(CLIENT *clnt, challengeTuple ct){
+	int *result = submitchallenge_100(&ct, clnt);
+	if (result == NULL){
+		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
+		exit(0);
+	}
+	return *(result);
+}
+
+int getWinner(CLIENT *clnt, int transactionID){
+	int *result = getwinner_100(&transactionID, clnt);
+	if (result == NULL){
+		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
+		exit(0);
+	}
+	return *(result);
+}
+
+row getSeed(CLIENT *clnt, int transactionID){
+	row *result = getseed_100(&transactionID, clnt);
 	if (result == NULL){
 		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
 		exit(0);
@@ -121,6 +148,14 @@ main (int argc, char *argv[])
 	}
 	host = argv[1];
 	clnt = clnt_create(argv[1], PROG, VERSAO, "udp");
+	char data[] = "lorenzo";
+	size_t length = strlen(data);
+
+	unsigned char hash[SHA_DIGEST_LENGTH];
+	SHA1(data, length, hash);
+	// for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
+	// 	printf("%02x", hash[i]);
+	// printf("\n");
 	while (1){
 		int opt = imprimeMenu();
 		printf("opcao = %d\n", opt);
@@ -138,6 +173,56 @@ main (int argc, char *argv[])
 			printf("digite o ID da transacao: ");
 			scanf("%d", &id);
 			printf("STATUS = %d\n", getTransactionStatus(clnt, id));
+		}
+		else if (opt == 777){ //RETIRAR DEPOIS *testando submitchallenge
+			challengeTuple ct;
+			ct.clientID = 777;
+			strcpy(ct.seed, "asdfasd3");
+			// ct.seed = "lorenzo";
+			ct.transactionId = 0;
+			printf("resultado = %d\n", submitChallenge(clnt, ct));
+		}
+		else if (opt == MENUGETWINNER){
+			int id;
+			printf("digite o ID da transacao: ");
+			scanf("%d", &id);
+			printf("VENCEDOR = %d\n", getWinner(clnt, id));
+		}
+		else if (opt == MENUGETSEED){
+			int id;
+			printf("digite o ID da transacao: ");
+			scanf("%d", &id);
+			row r = getSeed(clnt, id);
+			printf("desafii=  %d\n", r.challenge);
+			printf("status = %d\n", r.status);
+			printf("%s\n", r.seed);
+		}
+		else if (opt == MENUMINERAR){
+			MINERAR:
+				1+1;
+				int tID = getTransactionID(clnt);
+				int challenge = getChallenge(clnt, tID);
+				int resultado = 0;
+				//implementar brute force
+				
+				challengeTuple ct;
+				ct.transactionId = tID;
+				ct.clientID = 777;
+				//
+				while (resultado == 0){
+					if (resultado == 2 || resultado == -1)
+						goto MINERAR;
+					
+					strcpy(ct.seed, "asdfasd3");
+					printf("seed encontrada = %s\n", ct.seed);
+					// ct.seed = "lorenzo";
+					printf("resultado = %d\n", resultado = submitChallenge(clnt, ct));
+					if (resultado == 1){
+						printf("resolvido transaction = %d!!!!\n", tID);
+						exit(0);
+					}
+				}
+			
 		}
 	}
 	prog_100 (host);
