@@ -6,12 +6,34 @@
 
 #include "rpcMiner.h"
 #include <openssl/sha.h>
+#include <limits.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+
 #define MENUGETTRANSACTIONID 1
 #define MENUGETCHALLENGE 2
 #define MENUGETTRANSACTIONSTATUS 3
 #define MENUGETWINNER 4
 #define MENUGETSEED 5
 #define MENUMINERAR 6 
+#define KILL_THREADS 1
+#define RUN_THREADS 0
+#define SUCCESS 1
+#define EXHAUST 2
+#define LATE 0
+
+
+char *host;
+int threads_flag = RUN_THREADS;
+// CLIENT *clnt;
+
+typedef struct thread_data {
+   int x_i, x_f, id, status, tID;
+   char seed[40];
+   CLIENT *clnt;
+} thread_data;
+
 
 int imprimeMenu(){
 	int opcao;
@@ -82,58 +104,59 @@ row getSeed(CLIENT *clnt, int transactionID){
 	return *(result);
 }
 
-void
-prog_100(char *host)
-{
-	CLIENT *clnt;
-	int  *result_1;
-	char *gettransactionid_100_arg;
-	int  *result_2;
-	int  getchallenge_100_arg;
-	int  *result_3;
-	int  gettransactionstatus_100_arg;
-	int  *result_4;
-	challengeTuple  submitchallenge_100_arg;
-	int  *result_5;
-	int  getwinner_100_arg;
-	row  *result_6;
-	int  getseed_100_arg;
+void *brute(void *arg){
+	thread_data *tdata = (thread_data *) arg;
+	challengeTuple ct;
+	int xi = tdata->x_i, xf = tdata->x_f, id = tdata->id;
+	ct.transactionId = tdata->tID;
+	ct.clientID = 777;
+	CLIENT *clnt = tdata->clnt;
+	// CLIENT *clnt;
+	printf("ate aqui %d\n", id);
+	fflush(stdout);
+	// clnt = clnt_create(host, PROG, VERSAO, "udp");
+	if (clnt == (CLIENT *) NULL) {
+		clnt_pcreateerror(host);
+		printf("ERRO AO CRIAR CLIENTE %d\n", id);
+		fflush(stdout);
+		exit(1);
+	}
+	int finish = 0;
+	for (int i = xi; i <= xf && !finish; ++i){
+		if (threads_flag == KILL_THREADS){
+			// tdata->status = LATE;
+			finish = 1;
+			break;
+			// pthread_exit(NULL);
+		}
+		sprintf(ct.seed, "%d", i);
+		// printf("seed encontrada = %s\n", ct.seed);
+		
+		int resultado = submitChallenge(clnt, ct);
+		// printf("resultado = %d\n", resultado = submitChallenge(clnt, ct));
+		if (resultado == 1){
+			printf("resolvido transaction = %d!!!! ID = %d seed = %d\n", ct.transactionId, id, i);
+			strcpy(tdata->seed, ct.seed);
+			threads_flag = KILL_THREADS;
+			tdata->status = SUCCESS;
+			finish = 1;
+			break;
+			// pthread_exit(NULL);
+		}
+		if (resultado == 2){
+			
+			printf("alguem ja resolveu e nao fui eu transaction = %d!!!!\n", ct.transactionId);
+			threads_flag = KILL_THREADS;
+			// tdata->status = LATE;
+			finish = 1;
+			break;
+			// pthread_exit(NULL);
+		}
+	}
 
-#ifndef	DEBUG
-	clnt = clnt_create (host, PROG, VERSAO, "udp");
-	if (clnt == NULL) {
-		clnt_pcreateerror (host);
-		exit (1);
-	}
-#endif	/* DEBUG */
-
-	result_1 = gettransactionid_100((void*)&gettransactionid_100_arg, clnt);
-	if (result_1 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
-	result_2 = getchallenge_100(&getchallenge_100_arg, clnt);
-	if (result_2 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
-	result_3 = gettransactionstatus_100(&gettransactionstatus_100_arg, clnt);
-	if (result_3 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
-	result_4 = submitchallenge_100(&submitchallenge_100_arg, clnt);
-	if (result_4 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
-	result_5 = getwinner_100(&getwinner_100_arg, clnt);
-	if (result_5 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
-	result_6 = getseed_100(&getseed_100_arg, clnt);
-	if (result_6 == (row *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
-#ifndef	DEBUG
-	clnt_destroy (clnt);
-#endif	 /* DEBUG */
+	// if (!finish)tdata->status = EXHAUST;
+	// clnt_destroy (clnt);
+	pthread_exit(NULL);
 }
 
 
@@ -141,12 +164,14 @@ int
 main (int argc, char *argv[])
 {
 	char *host;
-	CLIENT *clnt;
+	
 	if (argc < 2) {
 		printf ("usage: %s server_host\n", argv[0]);
 		exit (1);
 	}
 	host = argv[1];
+	printf("%s\n", host);
+	CLIENT *clnt;
 	clnt = clnt_create(argv[1], PROG, VERSAO, "udp");
 	char data[] = "lorenzo";
 	size_t length = strlen(data);
@@ -204,27 +229,67 @@ main (int argc, char *argv[])
 				int challenge = getChallenge(clnt, tID);
 				int resultado = 0;
 				//implementar brute force
-				
 				challengeTuple ct;
 				ct.transactionId = tID;
+				printf("transacao atual = %d\n", tID);
+				row r = getSeed(clnt, tID);
+				printf("desafii=  %d\n", r.challenge);
+				printf("status = %d\n", r.status);
+				printf("%s\n", r.seed);
 				ct.clientID = 777;
 				//
 				while (resultado == 0){
 					if (resultado == 2 || resultado == -1)
 						goto MINERAR;
 					
-					strcpy(ct.seed, "asdfasd3");
-					printf("seed encontrada = %s\n", ct.seed);
-					// ct.seed = "lorenzo";
-					printf("resultado = %d\n", resultado = submitChallenge(clnt, ct));
-					if (resultado == 1){
-						printf("resolvido transaction = %d!!!!\n", tID);
-						exit(0);
+					int N = atoi(argv[2]);
+					int n_threads = atoi(argv[3]);
+					int remainder = N % n_threads;
+					int block_size = N/n_threads;
+					int acum = 0;
+					// CLIENT *clientes[n_threads];
+					thread_data tdata[n_threads];
+    				pthread_t threads[n_threads];
+					
+					for (int i = 0; i < n_threads; ++i){
+						int cur_block = block_size + (remainder > 0 ? 1: 0);
+						tdata[i].id = i;
+						tdata[i].x_i = acum;
+						tdata[i].x_f = acum + cur_block - 1;
+						tdata[i].tID = tID;
+						tdata[i].status = -1;
+						tdata[i].clnt = clnt_create(argv[1], PROG, VERSAO, "udp");
+						remainder--;
+						// printf("tamanho bloco %d:%d\n", i, cur_block);
+						// printf("intervalo = [%d, %d]\n", acum, acum+cur_block-1);
+						acum += cur_block;
+						pthread_create(&(threads[i]), NULL, brute, &(tdata[i]));
 					}
+
+					for (int i = 0; i < n_threads; ++i){
+						printf("CODIGO DA THREAD: %d\n", pthread_join(threads[i], NULL));
+					}
+					for (int i = 0; i < n_threads; ++i){
+						printf("STATUS DA THREAD %d: %d\n", i, tdata[i].status);
+						if (tdata[i].status == SUCCESS){
+							size_t length = strlen(tdata[i].seed);
+							unsigned char hash[SHA_DIGEST_LENGTH];
+							SHA1(tdata[i].seed, length, hash);
+							printf("ACABOU seed = %s ->", tdata[i].seed);
+							for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
+								printf("%02x", hash[i]);
+							printf("\n");
+							break;
+							// printf("")
+						}
+					}
+					threads_flag = RUN_THREADS;
+					goto MINERAR;
+					
 				}
 			
 		}
 	}
-	prog_100 (host);
+	
 exit (0);
 }

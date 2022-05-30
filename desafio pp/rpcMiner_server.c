@@ -128,9 +128,9 @@ submitchallenge_100_svc(challengeTuple *argp, struct svc_req *rqstp)
 
 	unsigned char hash[SHA_DIGEST_LENGTH];
 	SHA1(data, length, hash);
-	for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
-		printf("%02x", hash[i]);
-	printf("\n");
+	// for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
+	// 	printf("%02x", hash[i]);
+	// printf("\n");
 
 	//checar se a hash eh valida
 	int valid = 1;
@@ -139,14 +139,14 @@ submitchallenge_100_svc(challengeTuple *argp, struct svc_req *rqstp)
 	// printf("%02x\n", (~0) << 4);
 	for (int i = 0, qtd = 1; i < SHA_DIGEST_LENGTH && challenge > 0; i+=4,++qtd){ //de 4 em 4 bytes
 		int left_shift = (32 - challenge < 0) ? 0 : 32 - challenge;
-		printf("left shift = %d\n", left_shift);
-		printf("shiftado = %02x\n", ((~0) << left_shift));
+		// printf("left shift = %d\n", left_shift);
+		// printf("shiftado = %02x\n", ((~0) << left_shift));
 		int hash_int = 0;
 		for (int j = 0; j < 4; ++j){
 			hash_int = (hash_int | hash[i + j]);
 			if (j < 3)
 				hash_int <<= 8;
-			printf("%02x\n", hash_int);
+			// printf("%02x\n", hash_int);
 		}
 		// hash_int = (hash_int | hash[i+1])
 		valid = valid && ((((~0) << left_shift) & hash_int) == 0);
@@ -167,7 +167,8 @@ submitchallenge_100_svc(challengeTuple *argp, struct svc_req *rqstp)
 	e.challenge = (tamanhoLista % 128) + 1;
 	listaDesafios[tamanhoLista] = e;
 	tamanhoLista++;
-
+	printf("%s\n", ct.seed);
+	printf("tamanholista = %d\n", tamanhoLista);
 	result = 1;
 	return &result;
 }
