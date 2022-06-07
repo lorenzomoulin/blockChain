@@ -345,11 +345,13 @@ main (int argc, char *argv[])
 					for (int i = 0; i < n_threads; ++i){
 						pthread_join(threads[i], NULL);
 					}
+					printf("transacao atual: %d\n", tID);
+					printf("challenge: %d", challenge);
 					for (int i = 0; i < n_threads; ++i){
 						if (tdata[i].status == SUCCESS){
 							size_t length = strlen(tdata[i].seed);
-							printf("seed encontrada: %s -> ", tdata[i].seed);
 							unsigned char hash[SHA_DIGEST_LENGTH];
+							printf("seed encontrada: %s -> ", tdata[i].seed);
 							SHA1(tdata[i].seed, length, hash);
 							for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
 								printf("%02x", hash[i]);
@@ -357,6 +359,7 @@ main (int argc, char *argv[])
 							break;
 						}
 					}
+					printf("vencedor: %d\n", getWinner(tID));
 					threads_flag = RUN_THREADS;
 					first_time = 0;
 					goto MINERAR;
