@@ -26,7 +26,6 @@ int *
 gettransactionid_100_svc(void *argp, struct svc_req *rqstp)
 {
 	static int  result;
-	// printf("tamanholista = %d\n", tamanhoLista);
 	if (tamanhoLista == 0){
 		elements e;
 		e.transactionID = 0;

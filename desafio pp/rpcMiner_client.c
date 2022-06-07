@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 
 #define MENUGETTRANSACTIONID 1
 #define MENUGETCHALLENGE 2
@@ -26,10 +27,12 @@
 
 char *host;
 int threads_flag = RUN_THREADS;
-// CLIENT *clnt;
+int n_threads;
+int *last_first_idx;
 
 typedef struct thread_data {
-   int x_i, x_f, id, status, tID;
+   int x_i, x_f, id, status, tID, challenge;
+   int last_xi;
    char seed[40];
    CLIENT *clnt;
 } thread_data;
@@ -51,6 +54,7 @@ int imprimeMenu(){
 
 int getTransactionID(CLIENT *clnt){
 	void *kk;
+	assert(clnt != NULL);
 	int *result = gettransactionid_100(kk, clnt);
 	if (result == NULL){
 		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
@@ -60,6 +64,7 @@ int getTransactionID(CLIENT *clnt){
 }
 
 int getChallenge(CLIENT *clnt, int transactionID){
+	assert(clnt != NULL);
 	int *result = getchallenge_100(&transactionID, clnt);
 	if (result == NULL){
 		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
@@ -69,6 +74,7 @@ int getChallenge(CLIENT *clnt, int transactionID){
 }
 
 int getTransactionStatus(CLIENT *clnt, int transactionID){
+	assert(clnt != NULL);
 	int *result = gettransactionstatus_100(&transactionID, clnt);
 	if (result == NULL){
 		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
@@ -78,6 +84,7 @@ int getTransactionStatus(CLIENT *clnt, int transactionID){
 }
 
 int submitChallenge(CLIENT *clnt, challengeTuple ct){
+	assert(clnt != NULL);
 	int *result = submitchallenge_100(&ct, clnt);
 	if (result == NULL){
 		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
@@ -87,6 +94,7 @@ int submitChallenge(CLIENT *clnt, challengeTuple ct){
 }
 
 int getWinner(CLIENT *clnt, int transactionID){
+	assert(clnt != NULL);
 	int *result = getwinner_100(&transactionID, clnt);
 	if (result == NULL){
 		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
@@ -96,6 +104,7 @@ int getWinner(CLIENT *clnt, int transactionID){
 }
 
 row getSeed(CLIENT *clnt, int transactionID){
+	assert(clnt != NULL);
 	row *result = getseed_100(&transactionID, clnt);
 	if (result == NULL){
 		fprintf(stderr, "PROBLEMA NA CHAMADA RPC\n");
@@ -104,58 +113,134 @@ row getSeed(CLIENT *clnt, int transactionID){
 	return *(result);
 }
 
+int test_hash(char *seed, int challenge){
+	// int challenge = e.challenge;
+	// gerar a hash da semente
+	// printf("INICIO\n");
+	char data[40];
+	strcpy(data, seed);
+	size_t length = strlen(data);
+
+	unsigned char hash[SHA_DIGEST_LENGTH];
+	SHA1(data, length, hash);
+	// for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
+	// 	printf("%02x", hash[i]);
+	// printf("\n");
+	int result = 1;
+	//checar se a hash eh valida
+	int valid = 1;
+	int teste = 0;
+	// printf("%02x\n", teste);
+	// printf("%02x\n", (~0) << 4);
+	for (int i = 0, qtd = 1; i < SHA_DIGEST_LENGTH && challenge > 0; i+=4,++qtd){ //de 4 em 4 bytes
+		int left_shift = (32 - challenge < 0) ? 0 : 32 - challenge;
+		// printf("left shift = %d\n", left_shift);
+		// printf("shiftado = %02x\n", ((~0) << left_shift));
+		int hash_int = 0;
+		for (int j = 0; j < 4; ++j){
+			hash_int = (hash_int | hash[i + j]);
+			if (j < 3)
+				hash_int <<= 8;
+			// printf("%02x\n", hash_int);
+		}
+		// hash_int = (hash_int | hash[i+1])
+		valid = valid && ((((~0) << left_shift) & hash_int) == 0);
+		challenge -= 32;
+		if (!valid){
+			break;
+		}
+	}
+	// printf("FIM\n");
+	return valid;
+}
+
 void *brute(void *arg){
 	thread_data *tdata = (thread_data *) arg;
 	challengeTuple ct;
-	int xi = tdata->x_i, xf = tdata->x_f, id = tdata->id;
+	int xi = tdata->x_i, xf = tdata->x_f, id = tdata->id, challenge = tdata->challenge;
+	// printf("COMECO DA FUNCAO THREAD ID = %d\n", id);
 	ct.transactionId = tdata->tID;
 	ct.clientID = 777;
 	CLIENT *clnt = tdata->clnt;
-	// CLIENT *clnt;
-	printf("ate aqui %d\n", id);
-	fflush(stdout);
-	// clnt = clnt_create(host, PROG, VERSAO, "udp");
-	if (clnt == (CLIENT *) NULL) {
-		clnt_pcreateerror(host);
-		printf("ERRO AO CRIAR CLIENTE %d\n", id);
-		fflush(stdout);
-		exit(1);
-	}
+	
+	unsigned char hash[SHA_DIGEST_LENGTH];
 	int finish = 0;
-	for (int i = xi; i <= xf && !finish; ++i){
-		if (threads_flag == KILL_THREADS){
-			// tdata->status = LATE;
+	int i;
+	for (i = xi; i <= xf && !finish; ++i){
+		// if (clnt == NULL){
+		// 	clnt = clnt_create(host, PROG, VERSAO, "udp");
+		// }
+		// assert(clnt != NULL);
+		if (threads_flag == KILL_THREADS || getTransactionStatus(clnt, ct.transactionId) == 0){
+			threads_flag == KILL_THREADS;
 			finish = 1;
 			break;
-			// pthread_exit(NULL);
 		}
 		sprintf(ct.seed, "%d", i);
-		// printf("seed encontrada = %s\n", ct.seed);
+		// printf("ANTES DA HASH\n");
+		// fflush(stdout);
 		
-		int resultado = submitChallenge(clnt, ct);
-		// printf("resultado = %d\n", resultado = submitChallenge(clnt, ct));
-		if (resultado == 1){
-			printf("resolvido transaction = %d!!!! ID = %d seed = %d\n", ct.transactionId, id, i);
-			strcpy(tdata->seed, ct.seed);
-			threads_flag = KILL_THREADS;
-			tdata->status = SUCCESS;
-			finish = 1;
-			break;
-			// pthread_exit(NULL);
+		size_t length = strlen(ct.seed);
+		assert(length > 0);
+		SHA1(ct.seed, length, hash);
+		// for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
+		// 	printf("%02x", hash[i]);
+		// printf("\n");
+		int result = 1;
+		//checar se a hash eh valida
+		int valida = 1;
+		int teste = 0;
+		// printf("%02x\n", teste);
+		// printf("%02x\n", (~0) << 4);
+		for (int i = 0, qtd = 1; i < SHA_DIGEST_LENGTH && challenge > 0; i+=4,++qtd){ //de 4 em 4 bytes
+			int left_shift = (32 - challenge < 0) ? 0 : 32 - challenge;
+			// printf("left shift = %d\n", left_shift);
+			// printf("shiftado = %02x\n", ((~0) << left_shift));
+			int hash_int = 0;
+			for (int j = 0; j < 4; ++j){
+				hash_int = (hash_int | hash[i + j]);
+				if (j < 3)
+					hash_int <<= 8;
+				// printf("%02x\n", hash_int);
+			}
+			// hash_int = (hash_int | hash[i+1])
+			valida = valida && ((((~0) << left_shift) & hash_int) == 0);
+			challenge -= 32;
+			if (!valida){
+				break;
+			}
 		}
-		if (resultado == 2){
-			
-			printf("alguem ja resolveu e nao fui eu transaction = %d!!!!\n", ct.transactionId);
-			threads_flag = KILL_THREADS;
-			// tdata->status = LATE;
-			finish = 1;
-			break;
-			// pthread_exit(NULL);
-		}
-	}
+		// int valida = test_hash(ct.seed, challenge);
+		// printf("TESTOU HASH\n");
+		// fflush(stdout);
+		if (valida){
+			// if (clnt == NULL){
+			// 	clnt = clnt_create(host, PROG, VERSAO, "udp");
+			// }
+			// assert(clnt != NULL);
+			int resultado = submitChallenge(clnt, ct);
 
-	// if (!finish)tdata->status = EXHAUST;
-	// clnt_destroy (clnt);
+			if (resultado == 1){
+				// printf("resolvido transaction = %d!!!! ID = %d seed = %d\n\n\n", ct.transactionId, id, i);
+				strcpy(tdata->seed, ct.seed);
+				threads_flag = KILL_THREADS;
+				tdata->status = SUCCESS;
+				finish = 1;
+				break;
+			}
+			else if (resultado == 2){
+				// printf("alguem ja resolveu e nao fui eu transaction = %d!!!!\n", ct.transactionId);
+				threads_flag = KILL_THREADS;
+				finish = 1;
+				break;
+			}
+		}
+		
+	}
+	last_first_idx[id] = i;
+	tdata->last_xi = i;
+	// printf("FIM DA FUNCAO THREAD ID = %d\n", id);
+	fflush(stdout);
 	pthread_exit(NULL);
 }
 
@@ -165,22 +250,17 @@ main (int argc, char *argv[])
 {
 	char *host;
 	
-	if (argc < 2) {
-		printf ("usage: %s server_host\n", argv[0]);
+	if (argc < 4) {
+		printf ("usage: %s server_host N_max threads_number\n", argv[0]);
 		exit (1);
 	}
 	host = argv[1];
-	printf("%s\n", host);
+	strcpy(host, argv[1]);
+	n_threads = atoi(argv[3]);
+	last_first_idx = (int*)malloc(sizeof(last_first_idx)*n_threads);
 	CLIENT *clnt;
 	clnt = clnt_create(argv[1], PROG, VERSAO, "udp");
-	char data[] = "lorenzo";
-	size_t length = strlen(data);
 
-	unsigned char hash[SHA_DIGEST_LENGTH];
-	SHA1(data, length, hash);
-	// for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
-	// 	printf("%02x", hash[i]);
-	// printf("\n");
 	while (1){
 		int opt = imprimeMenu();
 		printf("opcao = %d\n", opt);
@@ -199,14 +279,6 @@ main (int argc, char *argv[])
 			scanf("%d", &id);
 			printf("STATUS = %d\n", getTransactionStatus(clnt, id));
 		}
-		else if (opt == 777){ //RETIRAR DEPOIS *testando submitchallenge
-			challengeTuple ct;
-			ct.clientID = 777;
-			strcpy(ct.seed, "asdfasd3");
-			// ct.seed = "lorenzo";
-			ct.transactionId = 0;
-			printf("resultado = %d\n", submitChallenge(clnt, ct));
-		}
 		else if (opt == MENUGETWINNER){
 			int id;
 			printf("digite o ID da transacao: ");
@@ -223,71 +295,72 @@ main (int argc, char *argv[])
 			printf("%s\n", r.seed);
 		}
 		else if (opt == MENUMINERAR){
+			int first_time = 1;
 			MINERAR:
 				1+1;
+				assert(clnt != NULL);
 				int tID = getTransactionID(clnt);
 				int challenge = getChallenge(clnt, tID);
 				int resultado = 0;
-				//implementar brute force
 				challengeTuple ct;
 				ct.transactionId = tID;
-				printf("transacao atual = %d\n", tID);
+				// printf("transacao atual = %d\n", tID);
 				row r = getSeed(clnt, tID);
-				printf("desafii=  %d\n", r.challenge);
-				printf("status = %d\n", r.status);
-				printf("%s\n", r.seed);
+				// printf("desafio=  %d\n", r.challenge);
+				// printf("status = %d\n", r.status);
+				// printf("%s\n", r.seed);
 				ct.clientID = 777;
-				//
 				while (resultado == 0){
 					if (resultado == 2 || resultado == -1)
 						goto MINERAR;
 					
 					int N = atoi(argv[2]);
-					int n_threads = atoi(argv[3]);
+					
 					int remainder = N % n_threads;
 					int block_size = N/n_threads;
 					int acum = 0;
-					// CLIENT *clientes[n_threads];
 					thread_data tdata[n_threads];
     				pthread_t threads[n_threads];
 					
 					for (int i = 0; i < n_threads; ++i){
 						int cur_block = block_size + (remainder > 0 ? 1: 0);
 						tdata[i].id = i;
-						tdata[i].x_i = acum;
+						if (!first_time){
+							tdata[i].x_i = last_first_idx[i];
+						}
+						else
+							tdata[i].x_i = acum;
 						tdata[i].x_f = acum + cur_block - 1;
+						
+						// printf("segmento = [%d, %d]\n", tdata[i].x_i, tdata[i].x_f);
 						tdata[i].tID = tID;
+						tdata[i].challenge = challenge;
 						tdata[i].status = -1;
 						tdata[i].clnt = clnt_create(argv[1], PROG, VERSAO, "udp");
 						remainder--;
-						// printf("tamanho bloco %d:%d\n", i, cur_block);
-						// printf("intervalo = [%d, %d]\n", acum, acum+cur_block-1);
 						acum += cur_block;
 						pthread_create(&(threads[i]), NULL, brute, &(tdata[i]));
 					}
 
 					for (int i = 0; i < n_threads; ++i){
-						printf("CODIGO DA THREAD: %d\n", pthread_join(threads[i], NULL));
+						pthread_join(threads[i], NULL);
 					}
 					for (int i = 0; i < n_threads; ++i){
-						printf("STATUS DA THREAD %d: %d\n", i, tdata[i].status);
 						if (tdata[i].status == SUCCESS){
 							size_t length = strlen(tdata[i].seed);
+							printf("seed encontrada: %s -> ", tdata[i].seed);
 							unsigned char hash[SHA_DIGEST_LENGTH];
 							SHA1(tdata[i].seed, length, hash);
-							printf("ACABOU seed = %s ->", tdata[i].seed);
 							for (int i = 0; i < SHA_DIGEST_LENGTH; ++i)
 								printf("%02x", hash[i]);
 							printf("\n");
 							break;
-							// printf("")
 						}
 					}
 					threads_flag = RUN_THREADS;
+					first_time = 0;
 					goto MINERAR;
-					
 				}
-			
 		}
 	}
 	
