@@ -346,7 +346,7 @@ main (int argc, char *argv[])
 						pthread_join(threads[i], NULL);
 					}
 					printf("transacao atual: %d\n", tID);
-					printf("challenge: %d", challenge);
+					printf("challenge: %d\n", challenge);
 					for (int i = 0; i < n_threads; ++i){
 						if (tdata[i].status == SUCCESS){
 							size_t length = strlen(tdata[i].seed);
@@ -359,7 +359,7 @@ main (int argc, char *argv[])
 							break;
 						}
 					}
-					printf("vencedor: %d\n", getWinner(tID));
+					printf("vencedor: %d\n\n\n", getWinner(clnt, tID));
 					threads_flag = RUN_THREADS;
 					first_time = 0;
 					goto MINERAR;
